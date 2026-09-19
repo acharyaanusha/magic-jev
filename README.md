@@ -3,7 +3,7 @@
 A Magic 8 Ball for pull requests. Open a PR, click the ball, and it answers "should I approve this?" with one of the 20 classic phrases. The answer isn't random: the PR's real signals go to [Jev](https://typesafe.ai), a typed-decision model that answers in about 200 ms, which is fast enough to land while the ball is still shaking.
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="480" alt="Two real asks. On a docs-only pull request the ball shakes and answers &quot;Without a doubt&quot;, with confetti and a green glow; the line under it reads &quot;docs only, CI passing, 231 ms&quot;. On a pull request with failing CI it answers &quot;Outlook not so good&quot;: &quot;CI failing, 52 lines, 243 ms&quot;.">
+  <img src="docs/media/magic-jev-demo.gif" width="480" alt="Two real asks. On a docs-only pull request the ball shakes and answers &quot;Without a doubt&quot;, with confetti and a green glow; the line under it reads &quot;docs only, CI passing, 231 ms&quot;. On a pull request with failing CI it answers &quot;Outlook not so good&quot;: &quot;CI failing, 52 lines, 243 ms&quot;.">
 </p>
 
 It's a toy with a real point. Jev doesn't write text. It gets structured state and picks one option from a short list, so it can sit inside an interaction that a chat model would make you wait for.
