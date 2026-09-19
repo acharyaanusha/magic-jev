@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Magic Jev",
+  "version": "0.1.0",
+  "description": "A Magic 8 Ball for pull requests that ask for your review. Answers come from Jev, not chance.",
+  "icons": { "128": "icon-128.png" },
+  "permissions": ["storage", "alarms", "notifications"],
+  "host_permissions": ["https://api.github.com/*", "https://*.vercel.app/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    { "matches": ["https://github.com/*"], "js": ["content.js"], "run_at": "document_idle" }
+  ],
+  "options_page": "options.html"
+}

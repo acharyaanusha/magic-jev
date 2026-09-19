@@ -1,0 +1,26 @@
+{
+  "name": "magic-jev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.22.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build:extension": "node packages/extension/build.mjs",
+    "verify:criteria": "tsx scripts/verify-criteria.ts"
+  },
+  "dependencies": {
+    "ai": "^7.0.105",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.0",
+    "@types/node": "^22.13.14",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.13",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
