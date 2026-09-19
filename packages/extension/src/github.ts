@@ -27,14 +27,34 @@ const REVIEW_REQUEST_QUERY = 'is:open is:pr user-review-requested:@me archived:f
  * A non-2xx answer from GitHub. The message holds the status only, never the
  * response text or the token, so it is safe to log.
  */
+/** Which part of GitHub a request asked for, in the words the ball uses. */
+export type GitHubResource = 'pull request' | 'files' | 'reviews' | 'commit status' | 'checks' | 'account' | 'search';
+
 export class GitHubError extends Error {
   status: number;
+  /** What was being read when GitHub refused. Unset when the caller does not know. */
+  what: GitHubResource | undefined;
+  /** GitHub said no requests are left, which is the only time a 403 means a rate limit. */
+  rateLimited: boolean;
 
-  constructor(status: number) {
-    super(`GitHub answered ${status}`);
+  constructor(status: number, what?: GitHubResource, rateLimited = false) {
+    super(`GitHub answered ${status}${what ? ` for the ${what}` : ''}`);
     this.name = 'GitHubError';
     this.status = status;
+    this.what = what;
+    this.rateLimited = rateLimited;
   }
+}
+
+function resourceOf(path: string): GitHubResource {
+  const bare = path.split('?')[0];
+  if (bare.endsWith('/check-runs')) return 'checks';
+  if (bare.endsWith('/status')) return 'commit status';
+  if (bare.endsWith('/files')) return 'files';
+  if (bare.endsWith('/reviews')) return 'reviews';
+  if (bare.startsWith('/search/')) return 'search';
+  if (bare === '/user') return 'account';
+  return 'pull request';
 }
 
 async function getJson(path: string, token: string, fetchFn: typeof fetch): Promise<unknown> {
@@ -49,7 +69,10 @@ async function getJson(path: string, token: string, fetchFn: typeof fetch): Prom
     credentials: 'omit',
     cache: 'no-store',
   });
-  if (!response.ok) throw new GitHubError(response.status);
+  if (!response.ok) {
+    const rateLimited = response.status === 429 || response.headers.get('x-ratelimit-remaining') === '0';
+    throw new GitHubError(response.status, resourceOf(path), rateLimited);
+  }
   return response.json();
 }
 
@@ -158,8 +181,13 @@ export async function searchReviewRequests(
 export function githubFailureReason(error: unknown): string {
   if (error instanceof GitHubError) {
     if (error.status === 401) return 'GitHub token rejected';
-    if (error.status === 403 || error.status === 429) return 'GitHub rate limit reached';
-    if (error.status === 404) return 'GitHub cannot see this pull request';
+    if (error.rateLimited || error.status === 429) return 'GitHub rate limit reached';
+    if (error.status === 403 || error.status === 404) {
+      // A 404 on the pull request itself is a repository the token does not cover. GitHub hides
+      // private repositories that way. On any other part it is a permission the token lacks.
+      if (error.what === undefined || error.what === 'pull request') return 'this token cannot see this repository';
+      return `this token cannot read the ${error.what}`;
+    }
     return `GitHub answered ${error.status}`;
   }
   // fetch rejects with a TypeError when the network fails, and a DOMException when aborted.

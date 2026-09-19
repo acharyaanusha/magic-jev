@@ -290,10 +290,43 @@ describe('searchReviewRequests', () => {
 describe('githubFailureReason', () => {
   it('names each GitHub failure in plain words', () => {
     expect(githubFailureReason(new GitHubError(401))).toBe('GitHub token rejected');
-    expect(githubFailureReason(new GitHubError(403))).toBe('GitHub rate limit reached');
     expect(githubFailureReason(new GitHubError(429))).toBe('GitHub rate limit reached');
-    expect(githubFailureReason(new GitHubError(404))).toBe('GitHub cannot see this pull request');
     expect(githubFailureReason(new GitHubError(500))).toBe('GitHub answered 500');
+  });
+
+  it('says which part of the pull request the token could not read', () => {
+    // GitHub answers 404 for a private repository the token does not cover, and 403 or 404 for a
+    // resource the token lacks the permission for. "Rate limit" is only said when GitHub says so.
+    expect(githubFailureReason(new GitHubError(404, 'pull request'))).toBe('this token cannot see this repository');
+    expect(githubFailureReason(new GitHubError(404, 'checks'))).toBe('this token cannot read the checks');
+    expect(githubFailureReason(new GitHubError(403, 'checks'))).toBe('this token cannot read the checks');
+    expect(githubFailureReason(new GitHubError(403, 'commit status'))).toBe('this token cannot read the commit status');
+    expect(githubFailureReason(new GitHubError(403, 'checks', true))).toBe('GitHub rate limit reached');
+    expect(githubFailureReason(new GitHubError(404))).toBe('this token cannot see this repository');
+  });
+
+  it('labels a failed request by the resource it asked for', async () => {
+    const failing = (failOn: string) =>
+      (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes(failOn)) return new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '4990' } });
+        if (url.includes('/check-runs')) return Response.json({ total_count: 0, check_runs: [] });
+        if (url.endsWith('/status')) return Response.json({ state: 'pending', total_count: 0 });
+        if (/\/pulls\/\d+$/.test(url.split('?')[0])) {
+          return Response.json({ draft: false, additions: 1, deletions: 0, changed_files: 1, user: { login: 'a', type: 'User' }, requested_reviewers: [], head: { sha: 'abc' } });
+        }
+        return Response.json([]);
+      }) as typeof fetch;
+    const ref = { owner: 'o', repo: 'r', number: 1 };
+    await expect(fetchRawPr(ref, TOKEN, failing('/check-runs'))).rejects.toMatchObject({ status: 403, what: 'checks', rateLimited: false });
+    await expect(fetchRawPr(ref, TOKEN, failing('/status'))).rejects.toMatchObject({ what: 'commit status' });
+    await expect(fetchRawPr(ref, TOKEN, failing('/reviews'))).rejects.toMatchObject({ what: 'reviews' });
+    await expect(fetchRawPr(ref, TOKEN, failing('/pulls/1'))).rejects.toMatchObject({ what: 'pull request' });
+  });
+
+  it('calls a 403 a rate limit only when GitHub says none are left', async () => {
+    const limited = (async () => new Response('{}', { status: 403, headers: { 'x-ratelimit-remaining': '0' } })) as typeof fetch;
+    await expect(fetchLogin(TOKEN, limited)).rejects.toMatchObject({ status: 403, rateLimited: true });
   });
 
   it('says GitHub could not be reached when fetch itself threw', () => {
