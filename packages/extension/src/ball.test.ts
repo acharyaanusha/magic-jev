@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { PHRASES } from '../../core/src/index.js';
-import { TRIANGLE, estimateWidth, fitPhrase, type PhraseFit } from './ball.js';
+import { CONFETTI_COLORS, TRIANGLE, confettiPieces, estimateWidth, fitPhrase, type PhraseFit } from './ball.js';
 
 const ALL_PHRASES = Object.values(PHRASES).flat();
 
@@ -60,5 +60,31 @@ describe('fitPhrase', () => {
     const long = fitPhrase('one two three four five six seven eight nine ten eleven twelve');
     expect(long.lines.length).toBeLessThanOrEqual(3);
     expect(long.fontSize).toBeGreaterThan(0);
+  });
+});
+
+describe('confettiPieces', () => {
+  // A fixed sequence stands in for Math.random, so the burst is the same every run.
+  const seeded = () => {
+    let n = 0;
+    return () => ((n += 1) * 0.6180339887) % 1;
+  };
+
+  it('throws every piece up and away from the corner the ball sits in', () => {
+    const pieces = confettiPieces(28, seeded());
+    expect(pieces).toHaveLength(28);
+    for (const piece of pieces) {
+      // The ball is in the bottom-right corner: up is negative y, and there is no room to the right.
+      expect(piece.dy).toBeLessThan(0);
+      expect(piece.dx).toBeLessThanOrEqual(40);
+      expect(Math.hypot(piece.dx, piece.dy)).toBeGreaterThanOrEqual(80);
+      expect(Math.hypot(piece.dx, piece.dy)).toBeLessThanOrEqual(240);
+      expect(CONFETTI_COLORS).toContain(piece.color);
+    }
+  });
+
+  it('is not one clump: the pieces spread over at least 60 degrees', () => {
+    const angles = confettiPieces(28, seeded()).map((piece) => Math.atan2(-piece.dy, -piece.dx));
+    expect(Math.max(...angles) - Math.min(...angles)).toBeGreaterThan(Math.PI / 3);
   });
 });

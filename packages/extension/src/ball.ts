@@ -17,6 +17,49 @@ export interface BallAnswer {
   phrase: string;
   reason: string;
   onReasonClick?: () => void;
+  /** A confident yes. The ball throws confetti and glows green for a moment. */
+  celebrate?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Confetti, for a yes.
+// ---------------------------------------------------------------------------
+
+export const CONFETTI_COLORS = ['#3fb950', '#f2cc60', '#58a6ff', '#f778ba', '#ffffff', '#a371f7'] as const;
+
+export interface ConfettiPiece {
+  /** Where the piece peaks, in CSS pixels from the ball's centre. Up is negative y. */
+  dx: number;
+  dy: number;
+  /** Total spin, in degrees. */
+  spin: number;
+  color: string;
+  /** Milliseconds after the burst starts. */
+  delay: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * One burst. The ball sits in the bottom-right corner of the window, so the
+ * pieces go up and to the left, where there is room to be seen. `rng` is
+ * Math.random in the page and a fixed sequence in tests.
+ */
+export function confettiPieces(count: number, rng: () => number = Math.random): ConfettiPiece[] {
+  return Array.from({ length: count }, () => {
+    // 0 is straight left, 90 is straight up. Up to 100 leans a little right, over the ball.
+    const angle = ((8 + rng() * 92) * Math.PI) / 180;
+    const distance = 90 + rng() * 140;
+    return {
+      dx: -Math.cos(angle) * distance,
+      dy: -Math.sin(angle) * distance,
+      spin: (rng() < 0.5 ? -1 : 1) * (240 + rng() * 480),
+      color: CONFETTI_COLORS[Math.floor(rng() * CONFETTI_COLORS.length) % CONFETTI_COLORS.length],
+      delay: rng() * 120,
+      width: 5 + rng() * 4,
+      height: 8 + rng() * 6,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -365,6 +408,34 @@ function buildCss(): string {
     mj-bob 4200ms ease-in-out 1140ms infinite alternate;
 }
 
+/* A yes. The pieces start at the centre of the grown ball, behind it, and fall away as they fade. */
+.confetti {
+  position: absolute;
+  right: ${(BALL * ANSWER_SCALE) / 2}px;
+  bottom: ${(BALL * ANSWER_SCALE) / 2}px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.confetti i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 1.5px;
+  opacity: 0;
+  animation: mj-confetti 1500ms cubic-bezier(.15, .7, .3, 1) both;
+}
+@keyframes mj-confetti {
+  0% { opacity: 1; transform: translate(0, 0) rotate(0deg) scale(.4); }
+  55% { opacity: 1; transform: translate(var(--dx), var(--dy)) rotate(calc(var(--spin) * .7)) scale(1); }
+  100% { opacity: 0; transform: translate(calc(var(--dx) * 1.08), calc(var(--dy) + 110px)) rotate(var(--spin)) scale(.9); }
+}
+.root.celebrate .ball { animation: mj-yes-glow 1800ms ease-out both; }
+@keyframes mj-yes-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 255, 255, .09), 0 14px 26px rgba(0, 0, 0, .36); }
+  25% { box-shadow: 0 0 0 3px rgba(63, 185, 80, .95), 0 0 34px 10px rgba(63, 185, 80, .55), 0 14px 26px rgba(0, 0, 0, .36); }
+}
+
 /* The question, shown beside the resting ball. */
 .hint {
   position: absolute;
@@ -497,6 +568,7 @@ ${rollKeyframes('mj-window-out', 0, -90)}
   .root.reask[data-state="asking"] { --scale: ${ANSWER_SCALE}; }
   .pill { transform: none !important; }
   .hint { transform: translate(0, -50%); transition: opacity 160ms ease; }
+  .confetti { display: none; }
   .answer { transition: none; }
   .face8 { transition: opacity ${MIN_SHAKE_MS}ms linear; }
   .window { transform: none; opacity: 0; transition: opacity ${MIN_SHAKE_MS}ms linear; }
@@ -516,6 +588,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
   node.className = className;
   return node;
 }
+
+/** The triangle takes about this long to surface after the answer lands. The confetti goes with it. */
+const CELEBRATE_AFTER_MS = 520;
+const CONFETTI_COUNT = 32;
 
 /** How long the label stays out when the ball first appears. */
 const INTRO_MS = 4500;
@@ -580,7 +656,10 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
   close.setAttribute('aria-label', 'Hide Magic Jev on this page');
   close.textContent = '×';
 
-  stage.append(lift, hint, close);
+  // Before the ball in the tree, so the pieces come out from behind it.
+  const confetti = el('div', 'confetti');
+  confetti.setAttribute('aria-hidden', 'true');
+  stage.append(confetti, lift, hint, close);
 
   const answer = el('div', 'answer');
   answer.setAttribute('aria-live', 'polite');
@@ -692,6 +771,29 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
     button.removeAttribute('aria-busy');
     setState('answer');
     root.classList.remove('reask');
+    if (result.celebrate) void celebrate();
+  }
+
+  /** Confetti and a green glow, timed to the triangle surfacing. A no gets nothing: the ball is not unkind. */
+  async function celebrate(): Promise<void> {
+    await delay(CELEBRATE_AFTER_MS);
+    if (destroyed || state !== 'answer') return;
+    root.classList.add('celebrate');
+    if (!reducedMotion.matches) {
+      confetti.replaceChildren(
+        ...confettiPieces(CONFETTI_COUNT).map((piece) => {
+          const bit = document.createElement('i');
+          bit.style.cssText =
+            `--dx:${piece.dx.toFixed(1)}px;--dy:${piece.dy.toFixed(1)}px;--spin:${piece.spin.toFixed(0)}deg;` +
+            `width:${piece.width.toFixed(1)}px;height:${piece.height.toFixed(1)}px;` +
+            `background:${piece.color};animation-delay:${piece.delay.toFixed(0)}ms;`;
+          return bit;
+        }),
+      );
+    }
+    await delay(2000);
+    confetti.replaceChildren();
+    root.classList.remove('celebrate');
   }
 
   function destroy(): void {

@@ -42,6 +42,8 @@ async function ask(ref: PrRef): Promise<BallAnswer> {
   return {
     phrase: pickPhrase(reply.verdict),
     reason: `${reasonFor(reply.signals, reply.verdict)} · ${Math.round(reply.latencyMs)} ms`,
+    // Only the confident yes. A leaning yes is not a party.
+    celebrate: reply.verdict === 'yes',
   };
 }
 
