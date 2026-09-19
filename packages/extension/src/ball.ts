@@ -383,6 +383,7 @@ function buildCss(): string {
   box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
   transition: opacity 160ms ease, transform 160ms ease;
 }
+.root[data-state="idle"].intro .hint,
 .root[data-state="idle"] .stage:hover .hint,
 .root[data-state="idle"] .stage:has(.ball:focus-visible) .hint {
   opacity: 1;
@@ -516,6 +517,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
   return node;
 }
 
+/** How long the label stays out when the ball first appears. */
+const INTRO_MS = 4500;
+
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
@@ -569,7 +573,7 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
 
   const hint = el('span', 'hint');
   hint.setAttribute('aria-hidden', 'true');
-  hint.textContent = 'Should I approve this?';
+  hint.textContent = 'Should I approve this? Ask Magic Jev';
 
   const close = el('button', 'close');
   close.type = 'button';
@@ -591,6 +595,11 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
   shadow.append(root);
   // On <html>, not <body>: Turbo swaps the body when GitHub navigates, which would take the ball with it.
   document.documentElement.append(host);
+
+  // The 8 says what this is, not what to do with it. The label shows itself once, for a few
+  // seconds, when the ball first appears; after that it is on hover and focus only.
+  root.classList.add('intro');
+  const introTimer = setTimeout(() => root.classList.remove('intro'), INTRO_MS);
 
   const measure = canvasMeasure();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -647,6 +656,7 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
 
   async function ask(): Promise<void> {
     if (state === 'asking' || destroyed) return;
+    root.classList.remove('intro');
     root.classList.toggle('reask', state === 'answer');
     setState('asking');
     button.setAttribute('aria-busy', 'true');
@@ -687,6 +697,7 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
   function destroy(): void {
     if (destroyed) return;
     destroyed = true;
+    clearTimeout(introTimer);
     host.remove();
   }
 

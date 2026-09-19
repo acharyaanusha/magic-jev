@@ -7,6 +7,7 @@ import type { PrSignals } from '../../core/src/index.js';
 import { askServer, fetchLogin, githubFailureReason } from './github.js';
 import type { Settings } from './messages.js';
 import { loadSettings, saveSettings } from './settings.js';
+import { serverUrlSuggestion, tokenNote } from './setup-hints.js';
 
 /** A small, green pull request for the Test button. The rule says `yes`, so Jev should too. */
 const TEST_SIGNALS: PrSignals = {
@@ -92,8 +93,11 @@ async function canReach(origin: string): Promise<boolean> {
   }
 }
 
-const notAllowed = (origin: string) =>
-  `this extension is not allowed to reach ${origin}. Its manifest lists the hosts it may call.`;
+function notAllowed(origin: string): string {
+  const suggestion = serverUrlSuggestion(origin);
+  if (suggestion) return `${origin} looks mistyped. Did you mean ${suggestion}?`;
+  return `this extension is not allowed to reach ${origin}. Its manifest lists the hosts it may call.`;
+}
 
 async function save(): Promise<void> {
   const result = readForm();
@@ -125,7 +129,9 @@ async function save(): Promise<void> {
 async function testGitHub(settings: Settings): Promise<{ ok: boolean; line: string }> {
   if (settings.githubToken === '') return { ok: false, line: 'GitHub: no token yet' };
   try {
-    return { ok: true, line: `GitHub: signed in as ${await fetchLogin(settings.githubToken)}` };
+    const login = await fetchLogin(settings.githubToken);
+    const note = tokenNote(settings.githubToken);
+    return { ok: true, line: `GitHub: signed in as ${login}${note ? `. ${note}` : ''}` };
   } catch (error) {
     return { ok: false, line: `GitHub: ${githubFailureReason(error)}` };
   }
