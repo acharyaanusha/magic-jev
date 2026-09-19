@@ -98,7 +98,7 @@ describe('PR_CRITERIA', () => {
 
   it('contains no em dashes', () => {
     for (const text of [PR_INSTRUCTIONS, ...Object.values(PR_CRITERIA)]) {
-      expect(text).not.toContain('—');
+      expect(text).not.toContain(String.fromCharCode(0x2014));
     }
   });
 });
