@@ -255,6 +255,41 @@ describe('handleAsk: error mapping', () => {
     expect(parsed).toEqual({ ok: false, error: 'model_error', message: 'Jev did not answer in time.' });
   });
 
+  it('asks once more when the first attempt hangs, and answers from the second', async () => {
+    // Measured live: about 1 call in 30 to Jev never comes back. A second attempt does.
+    let calls = 0;
+    const decide = vi.fn<NonNullable<AskDeps['decide']>>((_signals, abortSignal) => {
+      calls += 1;
+      if (calls > 1) return Promise.resolve('lean_yes');
+      return new Promise<Verdict>((_resolve, reject) => {
+        abortSignal.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    });
+    const { response, parsed } = await ask({ decide, timeoutMs: 20 });
+    expect(response.status).toBe(200);
+    expect(parsed).toMatchObject({ ok: true, verdict: 'lean_yes' });
+    expect(decide).toHaveBeenCalledTimes(2);
+    // Each attempt gets its own abort signal, and the first one was aborted.
+    expect(decide.mock.calls[0][1].aborted).toBe(true);
+    expect(decide.mock.calls[1][1].aborted).toBe(false);
+    // The latency is everything the caller waited for, the hung attempt included.
+    if (parsed.ok) expect(parsed.latencyMs).toBeGreaterThanOrEqual(15);
+  });
+
+  it('gives up after two hung attempts', async () => {
+    const decide = vi.fn<NonNullable<AskDeps['decide']>>(() => new Promise<Verdict>(() => {}));
+    const { response } = await ask({ decide, timeoutMs: 20 });
+    expect(response.status).toBe(502);
+    expect(decide).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not ask again after a real failure, only after a hang', async () => {
+    const decide = decideThrowing(apiCallError(402));
+    const { response } = await ask({ decide });
+    expect(response.status).toBe(402);
+    expect(decide).toHaveBeenCalledTimes(1);
+  });
+
   it('still answers in time when decide ignores the abort signal', async () => {
     const decide = vi.fn<NonNullable<AskDeps['decide']>>(() => new Promise<Verdict>(() => {}));
     const started = performance.now();

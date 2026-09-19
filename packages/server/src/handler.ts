@@ -15,10 +15,18 @@ export interface AskDeps {
   decide?: (signals: PrSignals, signal: AbortSignal) => Promise<Verdict>;
   /** Defaults to process.env.ASK_PASSPHRASE. */
   passphrase?: string | undefined;
-  timeoutMs?: number; // default 5000
+  /** Per attempt. Default 1500. */
+  timeoutMs?: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 5000;
+/**
+ * Jev answers in about 200 ms, but measured live about 1 call in 30 never comes
+ * back. A hung attempt is cut off here and asked once more, so the worst case is
+ * 3 seconds of shaking, not 5 seconds and a shrug. Only a hang is retried: a
+ * real failure (credits, rate limit) would fail the same way again.
+ */
+const DEFAULT_TIMEOUT_MS = 1500;
+const MAX_ATTEMPTS = 2;
 const JEV_MODEL = 'typesafe-ai/jev';
 const TIMEOUT_MESSAGE = 'Jev did not answer in time.';
 const MODEL_FAILED_MESSAGE = 'The model call failed.';
@@ -170,28 +178,32 @@ export async function handleAsk(request: Request, deps: AskDeps = {}): Promise<R
 
   const decide = deps.decide ?? askJev;
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  // Racing against the timer means a decider that ignores the abort signal still cannot hang the response.
-  const timedOut = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error('timeout'));
-    }, timeoutMs);
-  });
-
+  // The clock covers every attempt: the latency reported is what the caller waited for.
   const started = performance.now();
-  try {
-    const verdict = await Promise.race([decide(signals, controller.signal), timedOut]);
-    const latencyMs = Math.round(performance.now() - started);
-    if (!isVerdict(verdict)) throw new Error('The decider answered with a verdict outside VERDICTS.');
-    return json(200, { ok: true, verdict, latencyMs });
-  } catch (error) {
-    // Once our own timer has fired, whatever the call rejected with is a timeout.
-    if (controller.signal.aborted) return fail(502, 'model_error', TIMEOUT_MESSAGE);
-    logModelFailure(error);
-    return modelFailure(error);
-  } finally {
-    clearTimeout(timer);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Racing against the timer means a decider that ignores the abort signal still cannot hang the response.
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error('timeout'));
+      }, timeoutMs);
+    });
+
+    try {
+      const verdict = await Promise.race([decide(signals, controller.signal), timedOut]);
+      const latencyMs = Math.round(performance.now() - started);
+      if (!isVerdict(verdict)) throw new Error('The decider answered with a verdict outside VERDICTS.');
+      return json(200, { ok: true, verdict, latencyMs });
+    } catch (error) {
+      // Once our own timer has fired, whatever the call rejected with is a timeout.
+      if (controller.signal.aborted) continue;
+      logModelFailure(error);
+      return modelFailure(error);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return fail(502, 'model_error', TIMEOUT_MESSAGE);
 }
