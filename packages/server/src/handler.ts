@@ -9,12 +9,17 @@ import { experimental_evaluate as evaluate } from 'ai';
 import { z } from 'zod';
 import { PASSPHRASE_HEADER, PR_QUESTIONS, VERDICTS } from '../../core/src/index.js';
 import type { AskErrorCode, AskRequest, AskResponse, PrSignals, Verdict } from '../../core/src/index.js';
+import { createRateLimiter } from './rate-limit.js';
 
 export interface AskDeps {
   /** Test seam. Defaults to the real Jev call. */
   decide?: (signals: PrSignals, signal: AbortSignal) => Promise<Verdict>;
   /** Defaults to process.env.ASK_PASSPHRASE. */
   passphrase?: string | undefined;
+  /** The hosted mode: no passphrase needed. Defaults to process.env.ASK_OPEN === 'true'. */
+  open?: boolean;
+  /** Says whether this caller may ask now. Defaults to 20 asks a minute per address. */
+  allow?: (caller: string) => boolean;
   /** Per attempt. Default 1500. */
   timeoutMs?: number;
 }
@@ -28,6 +33,13 @@ export interface AskDeps {
 const DEFAULT_TIMEOUT_MS = 1500;
 const MAX_ATTEMPTS = 2;
 const JEV_MODEL = 'typesafe-ai/jev';
+/** Nobody clicks a ball 20 times a minute. A script does. */
+const defaultAllow = createRateLimiter({ limit: 20, windowMs: 60_000 });
+
+/** Vercel overwrites x-forwarded-for, so its first entry is the caller and cannot be forged. */
+function callerOf(request: Request): string | null {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+}
 const TIMEOUT_MESSAGE = 'Jev did not answer in time.';
 const MODEL_FAILED_MESSAGE = 'The model call failed.';
 
@@ -157,11 +169,21 @@ function logModelFailure(error: unknown): void {
 }
 
 export async function handleAsk(request: Request, deps: AskDeps = {}): Promise<Response> {
-  // The passphrase comes first, before the body is read. This route spends Gateway credits.
-  const configured = 'passphrase' in deps ? deps.passphrase : process.env.ASK_PASSPHRASE;
-  const offered = request.headers.get(PASSPHRASE_HEADER);
-  if (!configured || offered === null || !safeEqual(offered, configured)) {
-    return fail(401, 'unauthorized', 'The passphrase is missing or wrong.');
+  // Who may ask comes first, before the body is read. This route spends Gateway credits.
+  // A self-hosted copy is closed with a passphrase. The hosted copy is open to anyone with the
+  // extension, so it leans on the rate limit here and on the Gateway budget behind it.
+  const open = deps.open ?? process.env.ASK_OPEN === 'true';
+  if (!open) {
+    const configured = 'passphrase' in deps ? deps.passphrase : process.env.ASK_PASSPHRASE;
+    const offered = request.headers.get(PASSPHRASE_HEADER);
+    if (!configured || offered === null || !safeEqual(offered, configured)) {
+      return fail(401, 'unauthorized', 'The passphrase is missing or wrong.');
+    }
+  }
+  // No address means no Vercel proxy in front: local development, where there is nobody to limit.
+  const caller = callerOf(request);
+  if (caller !== null && !(deps.allow ?? defaultAllow)(caller)) {
+    return fail(429, 'rate_limited', 'Too many asks. Try again in a minute.');
   }
 
   let body: unknown;

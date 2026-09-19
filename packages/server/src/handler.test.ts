@@ -132,6 +132,58 @@ describe('handleAsk: passphrase', () => {
   });
 });
 
+describe('handleAsk: the open, hosted mode', () => {
+  it('needs no passphrase when open, and ignores one that is sent', async () => {
+    const decide = decideReturning('yes');
+    expect((await handleAsk(makeRequest({ key: null }), { decide, open: true, passphrase: undefined })).status).toBe(200);
+    expect((await handleAsk(makeRequest({ key: 'anything' }), { decide, open: true, passphrase: PASSPHRASE })).status).toBe(200);
+  });
+
+  it('still refuses everything when neither open nor a passphrase is configured', async () => {
+    const decide = decideReturning('yes');
+    const response = await handleAsk(makeRequest({ key: null }), { decide, open: false, passphrase: undefined });
+    expect(response.status).toBe(401);
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('reads ASK_OPEN from the environment, and only the word true', async () => {
+    const decide = decideReturning('yes');
+    vi.stubEnv('ASK_PASSPHRASE', '');
+    vi.stubEnv('ASK_OPEN', 'true');
+    expect((await handleAsk(makeRequest({ key: null }), { decide })).status).toBe(200);
+    vi.stubEnv('ASK_OPEN', '1');
+    expect((await handleAsk(makeRequest({ key: null }), { decide })).status).toBe(401);
+  });
+
+  it('refuses a caller over the limit with 429, before the body is read or Jev is asked', async () => {
+    const decide = decideReturning('yes');
+    const allow = vi.fn((caller: string) => caller !== '203.0.113.9');
+    const from = (ip: string) => {
+      const request = makeRequest({ key: null, body: '{not json' });
+      request.headers.set('x-forwarded-for', `${ip}, 10.0.0.1`);
+      return request;
+    };
+    const refused = await handleAsk(from('203.0.113.9'), { decide, open: true, allow });
+    expect(refused.status).toBe(429);
+    expect((await readJson(refused)).parsed).toEqual({
+      ok: false,
+      error: 'rate_limited',
+      message: 'Too many asks. Try again in a minute.',
+    });
+    // Someone else is judged on their own address: the first one in x-forwarded-for.
+    expect((await handleAsk(from('198.51.100.7'), { decide, open: true, allow })).status).toBe(400);
+    expect(allow.mock.calls.map(([caller]) => caller)).toEqual(['203.0.113.9', '198.51.100.7']);
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('does not limit a request with no address, which only happens off Vercel', async () => {
+    const allow = vi.fn(() => false);
+    const response = await handleAsk(makeRequest({ key: null }), { decide: decideReturning('yes'), open: true, allow });
+    expect(response.status).toBe(200);
+    expect(allow).not.toHaveBeenCalled();
+  });
+});
+
 describe('handleAsk: bad bodies', () => {
   const cases: Array<[name: string, body: unknown, path: string | null]> = [
     ['a body that is not JSON', '{ nope', null],
