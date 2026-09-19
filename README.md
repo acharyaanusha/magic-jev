@@ -44,12 +44,13 @@ You run your own copy: a tiny server on Vercel, and the extension loaded unpacke
 git clone https://github.com/acharyaanusha/magic-jev && cd magic-jev
 corepack enable && pnpm install
 
-npx vercel link          # create a new project when asked
-openssl rand -base64 24 | tr -d '\n' | npx vercel env add ASK_PASSPHRASE production
+npx vercel link                                    # create a new project when asked
+openssl rand -base64 24 | tr -d '\n' > .env.passphrase   # gitignored; you'll paste it in step 3
+npx vercel env add ASK_PASSPHRASE production < .env.passphrase
 npx vercel deploy --prod
 ```
 
-- `ASK_PASSPHRASE` is a secret you make up. The extension sends it with every request, and the server refuses anything without it. It matters: the route spends your AI Gateway credits, so it must not be open to the world. Keep a copy for step 3 (generate it into a file first if you'd rather not retype it).
+- `ASK_PASSPHRASE` is a secret the extension sends with every request; the server refuses anything without it. It matters: the route spends your AI Gateway credits, so it must not be open to the world.
 - Jev is reached through [Vercel AI Gateway](https://vercel.com/ai-gateway) as `typesafe-ai/jev`. On a Vercel deployment the Gateway authenticates by itself; there is no key to set. Your team does need Gateway credits: on the free tier our calls were rate-limited until we added a few dollars. One ask is one Jev call and costs a small fraction of a cent.
 
 Check it answers:
@@ -72,7 +73,7 @@ Open any GitHub pull request. The ball appears; click it, then click the underli
 
 - **GitHub token**: a [classic token](https://github.com/settings/tokens/new) with the `repo` scope, which covers every PR you can open in your browser. If you only care about public PRs, a classic token with no scopes at all is enough, and is read-only. Fine-grained tokens are a trap here: they only cover repositories you own, and they can't read checks on private ones.
 - **Server URL**: your deployment, for example `https://your-project.vercel.app`. It has to be a `*.vercel.app` address (or `http://localhost` for `vercel dev`); for a custom domain, add it to `host_permissions` in `packages/extension/static/manifest.json` and rebuild.
-- **Passphrase**: the `ASK_PASSPHRASE` value from step 1.
+- **Passphrase**: the contents of `.env.passphrase` from step 1 (`pbcopy < .env.passphrase` on a Mac).
 - **Show the ball on every pull request**: off, the ball only appears on PRs that request your review. On, it appears on every PR, which is what you want for trying it out.
 
 Press **Test**. You should see your GitHub login and `Server: yes in … ms`. Press **Save**, reload the PR, click the ball.
