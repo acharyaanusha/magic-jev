@@ -30,7 +30,7 @@ Those go to a small server, which asks Jev to pick one of four verdicts:
 | **unclear** | CI pending or missing, or 301 to 800 lines: it needs a real read | "Concentrate and ask again." |
 | **no** | CI failing, a draft, changes requested, or over 800 lines | "Don't count on it." |
 
-Jev picks the verdict; the extension picks a random phrase from that verdict's five, so you get the variety of an 8 Ball without the coin flip. A confident yes gets confetti. The line under the ball says why ("CI failing · 912 lines") and how long Jev took.
+Jev picks the verdict; the extension picks a random phrase from that verdict's five, so you get the variety of an 8 Ball without the coin flip. A yes gets confetti, and a confident yes gets more of it. The line under the ball says why ("CI failing · 912 lines") and how long Jev took.
 
 The criteria are plain English in [`packages/core/src/criteria.ts`](packages/core/src/criteria.ts). The same rule is also written as code (`expectedVerdict`) so that Jev can be checked against it: see [Checking Jev](#checking-jev).
 

@@ -17,8 +17,12 @@ export interface BallAnswer {
   phrase: string;
   reason: string;
   onReasonClick?: () => void;
-  /** A confident yes. The ball throws confetti and glows green for a moment. */
-  celebrate?: boolean;
+  /**
+   * Any yes throws confetti and glows green for a moment: a full burst for a
+   * confident yes, a smaller one for a leaning yes. One of the leaning phrases
+   * is the word "Yes", and a ball that says yes and does nothing looks broken.
+   */
+  celebrate?: 'yes' | 'lean_yes';
 }
 
 // ---------------------------------------------------------------------------
@@ -592,6 +596,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
 /** The triangle takes about this long to surface after the answer lands. The confetti goes with it. */
 const CELEBRATE_AFTER_MS = 520;
 const CONFETTI_COUNT = 32;
+const CONFETTI_COUNT_LEAN = 14;
 
 /** How long the label stays out when the ball first appears. */
 const INTRO_MS = 4500;
@@ -771,17 +776,17 @@ export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
     button.removeAttribute('aria-busy');
     setState('answer');
     root.classList.remove('reask');
-    if (result.celebrate) void celebrate();
+    if (result.celebrate) void celebrate(result.celebrate === 'yes' ? CONFETTI_COUNT : CONFETTI_COUNT_LEAN);
   }
 
   /** Confetti and a green glow, timed to the triangle surfacing. A no gets nothing: the ball is not unkind. */
-  async function celebrate(): Promise<void> {
+  async function celebrate(pieces: number): Promise<void> {
     await delay(CELEBRATE_AFTER_MS);
     if (destroyed || state !== 'answer') return;
     root.classList.add('celebrate');
     if (!reducedMotion.matches) {
       confetti.replaceChildren(
-        ...confettiPieces(CONFETTI_COUNT).map((piece) => {
+        ...confettiPieces(pieces).map((piece) => {
           const bit = document.createElement('i');
           bit.style.cssText =
             `--dx:${piece.dx.toFixed(1)}px;--dy:${piece.dy.toFixed(1)}px;--spin:${piece.spin.toFixed(0)}deg;` +
