@@ -1,7 +1,7 @@
 /**
  * The background service worker. It owns every network call: it polls GitHub
- * for new review requests and raises notifications, and it answers the two
- * messages a content script can send ('pr-status' and 'ask').
+ * for new review requests and raises notifications, and it answers the
+ * messages a content script can send ('pr-status', 'ask' and 'open-options').
  *
  * Chrome stops this worker when it is idle and starts it again for an event,
  * so every listener is registered at the top level, and anything that must
@@ -18,7 +18,7 @@ import {
   githubFailureReason,
   searchReviewRequests,
 } from './github.js';
-import { STORAGE_KEYS, type AskReply, type PrRef, type PrStatusReply, type WorkerRequest } from './messages.js';
+import { STORAGE_KEYS, isWorkerRequest, type AskReply, type PrRef, type PrStatusReply } from './messages.js';
 import { isConfigured, loadSettings } from './settings.js';
 
 const POLL_ALARM = 'poll';
@@ -158,7 +158,7 @@ async function prStatus(ref: PrRef): Promise<PrStatusReply> {
 
 async function ask(ref: PrRef): Promise<AskReply> {
   const settings = await loadSettings();
-  if (!isConfigured(settings)) return { ok: false, reason: 'open the options page first' };
+  if (!isConfigured(settings)) return { ok: false, reason: 'open the options page first', openOptions: true };
 
   let signals;
   try {
@@ -170,25 +170,15 @@ async function ask(ref: PrRef): Promise<AskReply> {
   return askServer(settings, signals);
 }
 
-/** Messages arrive as plain JSON. Check the shape before acting on one. */
-function isWorkerRequest(message: unknown): message is WorkerRequest {
-  if (typeof message !== 'object' || message === null) return false;
-  const { type, owner, repo, number } = message as Record<string, unknown>;
-  return (
-    (type === 'pr-status' || type === 'ask') &&
-    typeof owner === 'string' &&
-    owner !== '' &&
-    typeof repo === 'string' &&
-    repo !== '' &&
-    typeof number === 'number' &&
-    Number.isInteger(number) &&
-    number > 0
-  );
-}
-
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
   // Only this extension's own scripts may ask.
   if (sender.id !== chrome.runtime.id || !isWorkerRequest(message)) return false;
+
+  if (message.type === 'open-options') {
+    // The ball's "open the options page first" line asks for this. Nothing to reply.
+    void chrome.runtime.openOptionsPage();
+    return false;
+  }
 
   const ref: PrRef = { owner: message.owner, repo: message.repo, number: message.number };
   if (message.type === 'pr-status') {

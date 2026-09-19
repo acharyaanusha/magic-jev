@@ -92,6 +92,9 @@ async function canReach(origin: string): Promise<boolean> {
   }
 }
 
+const notAllowed = (origin: string) =>
+  `this extension is not allowed to reach ${origin}. Its manifest lists the hosts it may call.`;
+
 async function save(): Promise<void> {
   const result = readForm();
   if ('problem' in result) {
@@ -104,7 +107,7 @@ async function save(): Promise<void> {
   fillForm(settings);
 
   if (settings.serverUrl !== '' && !(await canReach(settings.serverUrl))) {
-    setStatus(`Saved, but this extension is not allowed to reach ${settings.serverUrl}. Its manifest lists the hosts it may call.`, 'bad');
+    setStatus(`Saved, but ${notAllowed(settings.serverUrl)}`, 'bad');
     return;
   }
   const missing = [
@@ -132,6 +135,8 @@ async function testServer(settings: Settings): Promise<{ ok: boolean; line: stri
   if (settings.serverUrl === '' || settings.passphrase === '') {
     return { ok: false, line: 'Server: no URL or passphrase yet' };
   }
+  // Without this the fetch below is blocked and all the user sees is "could not reach the server".
+  if (!(await canReach(settings.serverUrl))) return { ok: false, line: `Server: ${notAllowed(settings.serverUrl)}` };
   const reply = await askServer(settings, TEST_SIGNALS);
   return reply.ok
     ? { ok: true, line: `Server: ${reply.verdict} in ${reply.latencyMs} ms` }

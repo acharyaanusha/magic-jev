@@ -124,7 +124,9 @@ One Vercel function, `POST /api/ask`.
 Manifest V3, TypeScript, bundled with esbuild.
 
 - **Background service worker.** On a `chrome.alarms` tick every 2 minutes it
-  calls GitHub search, `is:open is:pr review-requested:@me archived:false`, and
+  calls GitHub search, `is:open is:pr user-review-requested:@me archived:false`
+  (requests made to the user directly, not to a team, so that every
+  notification opens a PR the ball is drawn on), and
   compares the result with the PR ids in `chrome.storage.local`. The first
   poll after install only records what it finds. After that, each new one
   raises a `chrome.notifications` notification with an "Ask Magic Jev" button,

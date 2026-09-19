@@ -32,7 +32,26 @@ export const STORAGE_KEYS = { settings: 'settings', seenPrIds: 'seenPrIds', seed
 
 export type WorkerRequest =
   | ({ type: 'pr-status' } & PrRef)
-  | ({ type: 'ask' } & PrRef);
+  | ({ type: 'ask' } & PrRef)
+  /** Opens the options page. A content script cannot do that itself. No reply. */
+  | { type: 'open-options' };
+
+/** Messages arrive as plain JSON. The worker checks the shape before acting on one. */
+export function isWorkerRequest(message: unknown): message is WorkerRequest {
+  if (typeof message !== 'object' || message === null) return false;
+  const { type, owner, repo, number } = message as Record<string, unknown>;
+  if (type === 'open-options') return true;
+  return (
+    (type === 'pr-status' || type === 'ask') &&
+    typeof owner === 'string' &&
+    owner !== '' &&
+    typeof repo === 'string' &&
+    repo !== '' &&
+    typeof number === 'number' &&
+    Number.isInteger(number) &&
+    number > 0
+  );
+}
 
 /** Reply to 'pr-status': should the ball be drawn on this page? */
 export interface PrStatusReply {
@@ -42,7 +61,10 @@ export interface PrStatusReply {
   show: boolean;
 }
 
-/** Reply to 'ask'. A failure still ends the shake: `reason` is the plain-words line under "Reply hazy, try again". */
+/**
+ * Reply to 'ask'. A failure still ends the shake: `reason` is the plain-words line under "Reply hazy, try again".
+ * `openOptions` is set when the fix is on the options page, so the ball can make the reason line a link to it.
+ */
 export type AskReply =
   | { ok: true; verdict: Verdict; signals: PrSignals; latencyMs: number }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; openOptions?: true };

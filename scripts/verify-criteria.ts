@@ -108,13 +108,34 @@ type Outcome =
   | { kind: 'answer'; verdict: Verdict; latencyMs: number }
   | { kind: 'error'; label: string; fatal: boolean };
 
-async function ask(url: string, key: string, request: AskRequest): Promise<Outcome> {
+/**
+ * The server's origin, or a plain-words complaint. The passphrase travels in a
+ * header, so only https is accepted, or http on this machine. This is the same
+ * rule the extension's options page applies.
+ */
+export function serverOrigin(value: string): { origin: string } | { problem: string } {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return { problem: 'MAGIC_JEV_URL is not a URL. It should look like https://magic-jev.vercel.app' };
+  }
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
+    return { problem: 'MAGIC_JEV_URL must start with https://, so the passphrase is never sent in the clear.' };
+  }
+  return { origin: url.origin };
+}
+
+export async function ask(url: string, key: string, request: AskRequest, fetchFn: typeof fetch = fetch): Promise<Outcome> {
   let response: Response;
   try {
-    response = await fetch(`${url}/api/ask`, {
+    response = await fetchFn(`${url}/api/ask`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', [PASSPHRASE_HEADER]: key },
       body: JSON.stringify(request),
+      // Node resends custom headers when it follows a redirect. The passphrase goes to this origin only.
+      redirect: 'error',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
@@ -135,17 +156,23 @@ async function ask(url: string, key: string, request: AskRequest): Promise<Outco
 }
 
 async function main(): Promise<number> {
-  const url = process.env.MAGIC_JEV_URL?.trim().replace(/\/+$/, '');
+  const rawUrl = process.env.MAGIC_JEV_URL?.trim();
   const key = process.env.MAGIC_JEV_KEY?.trim();
-  if (!url || !key) {
+  if (!rawUrl || !key) {
     console.error(
       'verify-criteria needs two environment variables:\n' +
         '  MAGIC_JEV_URL  the origin of the deployed server, for example https://magic-jev.vercel.app\n' +
         '  MAGIC_JEV_KEY  the passphrase, the same value as ASK_PASSPHRASE on the deployment\n' +
-        `Missing: ${[!url && 'MAGIC_JEV_URL', !key && 'MAGIC_JEV_KEY'].filter(Boolean).join(', ')}`,
+        `Missing: ${[!rawUrl && 'MAGIC_JEV_URL', !key && 'MAGIC_JEV_KEY'].filter(Boolean).join(', ')}`,
     );
     return 1;
   }
+  const server = serverOrigin(rawUrl);
+  if ('problem' in server) {
+    console.error(server.problem);
+    return 1;
+  }
+  const url = server.origin;
 
   const cases = buildCases();
   console.log(`Asking ${url}/api/ask about ${cases.length} signal sets, one at a time.\n`);

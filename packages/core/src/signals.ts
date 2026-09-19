@@ -79,8 +79,10 @@ export function buildPrSignals(raw: RawPr): PrSignals {
     ci: ciState(raw),
     linesChanged: pull.additions + pull.deletions,
     filesChanged: pull.changed_files,
-    // An empty file list proves nothing, so it is not docs-only.
-    docsOnly: files.length > 0 && files.every((file) => isDocFile(file.filename)),
+    // An empty file list proves nothing, so it is not docs-only. Neither does a
+    // list that was cut short (the fetch stops at 1000 files): the files that
+    // were not seen could be code, and docs-only overrides the size rules.
+    docsOnly: files.length > 0 && files.length >= pull.changed_files && files.every((file) => isDocFile(file.filename)),
     testsTouched: files.some((file) => isTestFile(file.filename)),
     approvals,
     changesRequested,

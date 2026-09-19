@@ -5,18 +5,20 @@ import type { RawPr } from './types.js';
 /** A small, green, human-written pull request. Each test overrides what it cares about. */
 function rawPr(overrides: Partial<Omit<RawPr, 'pull'>> & { pull?: Partial<RawPr['pull']> } = {}): RawPr {
   const { pull, ...rest } = overrides;
+  const files = rest.files ?? [{ filename: 'src/app.ts' }, { filename: 'src/util.ts' }];
   return {
     pull: {
       draft: false,
       additions: 30,
       deletions: 12,
-      changed_files: 2,
+      // The whole file list was fetched, unless a test says the pull request is larger.
+      changed_files: files.length,
       user: { login: 'octocat', type: 'User' },
       requested_reviewers: [{ login: 'me' }],
       head: { sha: 'abc123' },
       ...pull,
     },
-    files: [{ filename: 'src/app.ts' }, { filename: 'src/util.ts' }],
+    files,
     reviews: [],
     combinedStatus: { state: 'success', total_count: 1 },
     checkRuns: [{ status: 'completed', conclusion: 'success' }],
@@ -78,6 +80,13 @@ describe('buildPrSignals: docsOnly', () => {
 
   it('is false for zero files', () => {
     expect(buildPrSignals(rawPr({ files: [] })).docsOnly).toBe(false);
+  });
+
+  it('is false when the file list was cut short, because the unseen files could be code', () => {
+    // GitHub lists files by path and the extension stops after 1000, so 400 files were never seen.
+    const files = Array.from({ length: 1000 }, (_, i) => ({ filename: `docs/page-${i}.md` }));
+    expect(buildPrSignals(rawPr({ files, pull: { changed_files: 1400 } })).docsOnly).toBe(false);
+    expect(buildPrSignals(rawPr({ files, pull: { changed_files: 1000 } })).docsOnly).toBe(true);
   });
 
   it('does not treat a name that merely contains "docs" or ".md" as documentation', () => {

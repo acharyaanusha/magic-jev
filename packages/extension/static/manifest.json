@@ -5,7 +5,7 @@
   "description": "A Magic 8 Ball for pull requests that ask for your review. Answers come from Jev, not chance.",
   "icons": { "128": "icon-128.png" },
   "permissions": ["storage", "alarms", "notifications"],
-  "host_permissions": ["https://api.github.com/*", "https://*.vercel.app/*"],
+  "host_permissions": ["https://api.github.com/*", "https://*.vercel.app/*", "http://localhost/*", "http://127.0.0.1/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     { "matches": ["https://github.com/*"], "js": ["content.js"], "run_at": "document_idle" }

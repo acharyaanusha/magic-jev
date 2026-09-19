@@ -12,6 +12,13 @@ export interface Ball {
   destroy(): void;
 }
 
+/** What one ask ends on. With `onReasonClick` the reason line is drawn as a link that calls it. */
+export interface BallAnswer {
+  phrase: string;
+  reason: string;
+  onReasonClick?: () => void;
+}
+
 // ---------------------------------------------------------------------------
 // Geometry, in CSS pixels at the ball's resting size.
 // ---------------------------------------------------------------------------
@@ -436,6 +443,10 @@ function buildCss(): string {
   transform: translateY(-4px);
   transition: opacity 200ms ease, transform 200ms ease;
 }
+/* The reason line as a link, for "open the options page first". */
+.pill-link { all: unset; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.pill-link:hover { color: #58a6ff; }
+.pill-link:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; border-radius: 4px; }
 .root[data-state="answer"] .answer { grid-template-rows: 1fr; transition-delay: 260ms; }
 .root[data-state="answer"] .pill { opacity: 1; transform: none; transition-delay: 520ms; }
 .sr {
@@ -507,7 +518,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): H
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function mountBall(onAsk: () => Promise<{ phrase: string; reason: string }>): Ball {
+export function mountBall(onAsk: () => Promise<BallAnswer>): Ball {
   // A ball left behind by an earlier copy of this script (the extension was reloaded) would sit under ours.
   document.querySelectorAll(`[${HOST_ATTRIBUTE}]`).forEach((stale) => stale.remove());
 
@@ -643,7 +654,7 @@ export function mountBall(onAsk: () => Promise<{ phrase: string; reason: string 
     spoken.textContent = '';
 
     const clickedAt = performance.now();
-    let result: { phrase: string; reason: string };
+    let result: BallAnswer;
     try {
       result = await onAsk();
     } catch {
@@ -658,7 +669,16 @@ export function mountBall(onAsk: () => Promise<{ phrase: string; reason: string 
 
     showPhrase(result.phrase);
     spoken.textContent = `${result.phrase}. `;
-    pill.textContent = result.reason;
+    const { onReasonClick } = result;
+    if (onReasonClick) {
+      const link = el('button', 'pill-link');
+      link.type = 'button';
+      link.textContent = result.reason;
+      link.addEventListener('click', () => onReasonClick());
+      pill.replaceChildren(link);
+    } else {
+      pill.textContent = result.reason;
+    }
     button.removeAttribute('aria-busy');
     setState('answer');
     root.classList.remove('reask');

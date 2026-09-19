@@ -10,9 +10,18 @@ import type { AskReply, PrRef, Settings } from './messages.js';
 
 const API = 'https://api.github.com';
 const PAGE_SIZE = 100;
-/** 10 pages of 100 covers 1000 files or reviews. Past that the size signal has already decided the verdict. */
+/**
+ * 10 pages of 100 covers 1000 files, reviews or check runs. A file list cut
+ * short here is never called docs-only (buildPrSignals compares it with
+ * changed_files), so the size signal decides the verdict for such a pull request.
+ */
 const MAX_PAGES = 10;
-const REVIEW_REQUEST_QUERY = 'is:open is:pr review-requested:@me archived:false';
+/**
+ * `user-review-requested` leaves out requests made to a team the user is on.
+ * The ball is only drawn when the user is named in requested_reviewers, so a
+ * notification for a team request would open a page with no ball on it.
+ */
+const REVIEW_REQUEST_QUERY = 'is:open is:pr user-review-requested:@me archived:false';
 
 /**
  * A non-2xx answer from GitHub. The message holds the status only, never the
@@ -44,14 +53,19 @@ async function getJson(path: string, token: string, fetchFn: typeof fetch): Prom
   return response.json();
 }
 
-/** Reads a list endpoint page by page until a short page, or MAX_PAGES. */
-async function getAllPages(path: string, token: string, fetchFn: typeof fetch): Promise<unknown[]> {
+/**
+ * Reads a list endpoint page by page until a short page, or MAX_PAGES. Most
+ * endpoints answer with the list itself; `listKey` names the field that holds
+ * it for the ones that wrap it in an object (check runs).
+ */
+async function getAllPages(path: string, token: string, fetchFn: typeof fetch, listKey?: string): Promise<unknown[]> {
   const items: unknown[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const body = await getJson(`${path}?per_page=${PAGE_SIZE}&page=${page}`, token, fetchFn);
-    if (!Array.isArray(body)) throw new Error('GitHub sent something other than a list');
-    items.push(...body);
-    if (body.length < PAGE_SIZE) break;
+    const pageItems = listKey === undefined ? body : record(body)[listKey];
+    if (!Array.isArray(pageItems)) throw new Error('GitHub sent something other than a list');
+    items.push(...pageItems);
+    if (pageItems.length < PAGE_SIZE) break;
   }
   return items;
 }
@@ -96,11 +110,13 @@ export async function fetchRawPr(ref: PrRef, token: string, fetchFn: typeof fetc
   const pullPath = `${repoPath(ref)}/pulls/${ref.number}`;
   const commitPath = `${repoPath(ref)}/commits/${encodeURIComponent(pull.head.sha)}`;
 
-  const [files, reviews, status, checks] = await Promise.all([
+  // Check runs are paged like files and reviews: one failed or running job past
+  // the first 100 (a large build matrix) must still count.
+  const [files, reviews, status, checkRuns] = await Promise.all([
     getAllPages(`${pullPath}/files`, token, fetchFn),
     getAllPages(`${pullPath}/reviews`, token, fetchFn),
     getJson(`${commitPath}/status?per_page=${PAGE_SIZE}`, token, fetchFn),
-    getJson(`${commitPath}/check-runs?per_page=${PAGE_SIZE}`, token, fetchFn),
+    getAllPages(`${commitPath}/check-runs`, token, fetchFn, 'check_runs'),
   ]);
 
   const combined = record(status);
@@ -112,7 +128,7 @@ export async function fetchRawPr(ref: PrRef, token: string, fetchFn: typeof fetc
       return { user: user === null || user === undefined ? null : { login: text(record(user).login) }, state: text(state) };
     }),
     combinedStatus: { state: text(combined.state), total_count: count(combined.total_count) },
-    checkRuns: list(record(checks).check_runs).map((run) => {
+    checkRuns: checkRuns.map((run) => {
       const { status: runStatus, conclusion } = record(run);
       return { status: text(runStatus), conclusion: typeof conclusion === 'string' ? conclusion : null };
     }),

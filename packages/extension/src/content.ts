@@ -5,7 +5,7 @@
  * never sees the token or the passphrase: it only messages the worker.
  */
 import { HAZY, pickPhrase, reasonFor } from '../../core/src/index.js';
-import { mountBall, type Ball } from './ball.js';
+import { mountBall, type Ball, type BallAnswer } from './ball.js';
 import type { AskReply, PrRef, PrStatusReply, WorkerRequest } from './messages.js';
 import { parsePrUrl } from './pr-url.js';
 
@@ -17,7 +17,14 @@ let generation = 0;
 
 const keyOf = (ref: PrRef) => `${ref.owner}/${ref.repo}#${ref.number}`;
 
-async function ask(ref: PrRef): Promise<{ phrase: string; reason: string }> {
+/** A content script cannot open the options page, so the worker is asked to. */
+function openOptions(): void {
+  const request: WorkerRequest = { type: 'open-options' };
+  // Rejects when the extension was reloaded under this page. There is nothing to do about that here.
+  chrome.runtime.sendMessage(request).catch(() => undefined);
+}
+
+async function ask(ref: PrRef): Promise<BallAnswer> {
   let reply: AskReply | undefined;
   try {
     const request: WorkerRequest = { type: 'ask', ...ref };
@@ -27,7 +34,11 @@ async function ask(ref: PrRef): Promise<{ phrase: string; reason: string }> {
     return { phrase: HAZY, reason: 'reload this page' };
   }
   if (!reply) return { phrase: HAZY, reason: 'the extension did not answer' };
-  if (!reply.ok) return { phrase: HAZY, reason: reply.reason };
+  if (!reply.ok) {
+    return reply.openOptions
+      ? { phrase: HAZY, reason: reply.reason, onReasonClick: openOptions }
+      : { phrase: HAZY, reason: reply.reason };
+  }
   return {
     phrase: pickPhrase(reply.verdict),
     reason: `${reasonFor(reply.signals, reply.verdict)} · ${Math.round(reply.latencyMs)} ms`,

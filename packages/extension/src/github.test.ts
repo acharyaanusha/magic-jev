@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PASSPHRASE_HEADER, type PrSignals } from '../../core/src/index.js';
+import { PASSPHRASE_HEADER, buildPrSignals, type PrSignals } from '../../core/src/index.js';
 import {
   GitHubError,
   askServer,
@@ -85,7 +85,7 @@ describe('fetchRawPr', () => {
         `${PULL_URL}/files?per_page=100&page=1`,
         `${PULL_URL}/reviews?per_page=100&page=1`,
         `https://api.github.com/repos/octo/hello/commits/${SHA}/status?per_page=100`,
-        `https://api.github.com/repos/octo/hello/commits/${SHA}/check-runs?per_page=100`,
+        `https://api.github.com/repos/octo/hello/commits/${SHA}/check-runs?per_page=100&page=1`,
       ].sort(),
     );
     expect(calls).toHaveLength(5);
@@ -155,6 +155,42 @@ describe('fetchRawPr', () => {
     expect(raw.files).toHaveLength(1000);
   });
 
+  it('reads every page of check runs, so a failure past the first 100 still counts', async () => {
+    const green = { status: 'completed', conclusion: 'success' };
+    const { fetchFn, calls } = fakeFetch(
+      prRoutes((url) => {
+        if (!url.pathname.endsWith('/check-runs')) return undefined;
+        const page = Number(url.searchParams.get('page'));
+        const runs =
+          page === 1
+            ? Array.from({ length: 100 }, () => green)
+            : [...Array.from({ length: 49 }, () => green), { status: 'completed', conclusion: 'failure' }];
+        return { body: { total_count: 150, check_runs: runs } };
+      }),
+    );
+    const raw = await fetchRawPr(REF, TOKEN, fetchFn);
+
+    const checkPages = calls.filter((call) => call.url.includes('/check-runs?')).map((call) => call.url);
+    const checksUrl = `https://api.github.com/repos/octo/hello/commits/${SHA}/check-runs`;
+    expect(checkPages).toEqual([`${checksUrl}?per_page=100&page=1`, `${checksUrl}?per_page=100&page=2`]);
+    expect(raw.checkRuns).toHaveLength(150);
+    expect(buildPrSignals(raw).ci).toBe('failing');
+  });
+
+  it('stops asking for check runs after 10 full pages', async () => {
+    const { fetchFn, calls } = fakeFetch(
+      prRoutes((url) =>
+        url.pathname.endsWith('/check-runs')
+          ? { body: { total_count: 5000, check_runs: Array.from({ length: 100 }, () => ({ status: 'completed', conclusion: 'success' })) } }
+          : undefined,
+      ),
+    );
+    const raw = await fetchRawPr(REF, TOKEN, fetchFn);
+
+    expect(calls.filter((call) => call.url.includes('/check-runs?'))).toHaveLength(10);
+    expect(raw.checkRuns).toHaveLength(1000);
+  });
+
   it('throws GitHubError with the status when the pull is refused, and asks for nothing else', async () => {
     const { fetchFn, calls } = fakeFetch(() => ({ status: 401, body: { message: 'Bad credentials' } }));
 
@@ -216,14 +252,14 @@ describe('fetchLogin', () => {
 });
 
 describe('searchReviewRequests', () => {
-  it('sends the review-requested query URL-encoded, with per_page=50', async () => {
+  it('asks for requests made to the user directly, not to a team, URL-encoded, with per_page=50', async () => {
     const { fetchFn, calls } = fakeFetch(() => ({ body: { total_count: 0, items: [] } }));
     await searchReviewRequests(TOKEN, fetchFn);
 
     expect(calls.map((call) => call.url)).toEqual([
-      'https://api.github.com/search/issues?q=is%3Aopen%20is%3Apr%20review-requested%3A%40me%20archived%3Afalse&per_page=50',
+      'https://api.github.com/search/issues?q=is%3Aopen%20is%3Apr%20user-review-requested%3A%40me%20archived%3Afalse&per_page=50',
     ]);
-    expect(new URL(calls[0]!.url).searchParams.get('q')).toBe('is:open is:pr review-requested:@me archived:false');
+    expect(new URL(calls[0]!.url).searchParams.get('q')).toBe('is:open is:pr user-review-requested:@me archived:false');
     expect(calls[0]?.headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
   });
 
