@@ -123,3 +123,7 @@ The design notes are in [`docs/superpowers/specs`](docs/superpowers/specs). Next
 ## Credits
 
 Jev is by [TypeSafe AI](https://typesafe.ai), reached through [Vercel AI Gateway](https://vercel.com/ai-gateway) with the [AI SDK](https://ai-sdk.dev)'s `evaluate`. This project isn't affiliated with TypeSafe, Vercel, GitHub or Mattel. Magic 8 Ball is a trademark of Mattel; this is a fan-made homage.
+
+## Licence
+
+[MIT](LICENSE).

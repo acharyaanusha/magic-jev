@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.22.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -22,5 +24,6 @@
     "tsx": "^4.23.13",
     "typescript": "5.9.3",
     "vitest": "^5.0.0"
-  }
+  },
+  "license": "MIT"
 }
