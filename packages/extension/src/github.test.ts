@@ -385,7 +385,7 @@ describe('askServer', () => {
     const cases: Array<[number, string, string, string]> = [
       [401, 'unauthorized', 'Wrong or missing passphrase.', 'server passphrase rejected'],
       [402, 'out_of_credits', 'No credits.', 'out of Gateway credits'],
-      [429, 'rate_limited', 'Slow down.', 'Jev is rate limited'],
+      [429, 'rate_limited', 'Slow down.', 'too many asks, try again in a minute'],
       [502, 'model_error', 'Jev did not answer in time.', 'Jev did not answer in time'],
       [502, 'model_error', 'The model call failed.', 'The model call failed'],
       [400, 'bad_request', 'signals.ci: bad value', 'the server refused the request'],

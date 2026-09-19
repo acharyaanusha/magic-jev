@@ -61,7 +61,8 @@ async function getJson(path: string, token: string, fetchFn: typeof fetch): Prom
   const response = await fetchFn(`${API}${path}`, {
     method: 'GET',
     headers: {
-      Authorization: `Bearer ${token}`,
+      // No token is fine for public repositories, within GitHub's hourly limit for anonymous requests.
+      ...(token !== '' && { Authorization: `Bearer ${token}` }),
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     },
@@ -178,8 +179,13 @@ export async function searchReviewRequests(
 }
 
 /** The line shown under "Reply hazy, try again" when a GitHub call fails. Never repeats an error's own text. */
-export function githubFailureReason(error: unknown): string {
+export function githubFailureReason(error: unknown, hasToken = true): string {
   if (error instanceof GitHubError) {
+    if (needsToken(error, hasToken)) {
+      return error.rateLimited
+        ? "GitHub's hourly limit without a token is used up: add one"
+        : 'this pull request is private: add a GitHub token';
+    }
     if (error.status === 401) return 'GitHub token rejected';
     if (error.rateLimited || error.status === 429) return 'GitHub rate limit reached';
     if (error.status === 403 || error.status === 404) {
@@ -193,6 +199,12 @@ export function githubFailureReason(error: unknown): string {
   // fetch rejects with a TypeError when the network fails, and a DOMException when aborted.
   if (error instanceof TypeError || error instanceof DOMException) return 'could not reach GitHub';
   return 'GitHub gave an unexpected answer';
+}
+
+/** True when there is no token and adding one is the fix: a private repository, or the anonymous limit used up. */
+export function needsToken(error: unknown, hasToken: boolean): boolean {
+  if (hasToken || !(error instanceof GitHubError)) return false;
+  return error.rateLimited || error.status === 403 || error.status === 404;
 }
 
 /** The server answers within about 5 seconds or gives up itself. Past this the ball should stop shaking anyway. */
@@ -216,7 +228,10 @@ export async function askServer(
   try {
     response = await fetchFn(`${server.serverUrl}/api/ask`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', [PASSPHRASE_HEADER]: server.passphrase },
+      headers: {
+        'content-type': 'application/json',
+        ...(server.passphrase !== '' && { [PASSPHRASE_HEADER]: server.passphrase }),
+      },
       body: JSON.stringify(request),
       credentials: 'omit',
       cache: 'no-store',
@@ -245,7 +260,8 @@ export async function askServer(
     case 'out_of_credits':
       return { ok: false, reason: 'out of Gateway credits' };
     case 'rate_limited':
-      return { ok: false, reason: 'Jev is rate limited' };
+      // Either the shared server's own limit or the Gateway's. The cure is the same.
+      return { ok: false, reason: 'too many asks, try again in a minute' };
     case 'bad_request':
       return { ok: false, reason: 'the server refused the request' };
     case 'model_error': {

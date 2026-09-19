@@ -111,6 +111,7 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
+      .optional { font-weight: 400; font-size: 12px; opacity: .65; margin-left: 6px; }
       .hint {
         margin: 6px 0 0;
         color: var(--muted);
@@ -174,15 +175,15 @@
         <div class="ball" aria-hidden="true"><span>8</span></div>
         <div>
           <h1>Magic Jev</h1>
-          <p>Everything here stays in this browser. Only the pull request signals go to your server.</p>
+          <p>Nothing here is required: public pull requests work as installed. Everything you enter stays in this browser.</p>
         </div>
       </header>
 
       <form id="form" autocomplete="off" novalidate>
         <div class="field">
-          <label for="githubToken">GitHub token</label>
+          <label for="githubToken">GitHub token <span class="optional">optional</span></label>
           <input id="githubToken" type="password" spellcheck="false" autocomplete="off" aria-describedby="tokenHint" />
-          <p class="hint" id="tokenHint">A <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer">classic token</a> with the <code>repo</code> scope, or no scopes at all for public pull requests only. Fine-grained tokens cannot read checks on private repositories.</p>
+          <p class="hint" id="tokenHint">Add one for private repositories, for more than about a dozen asks an hour, and to have the ball appear only on pull requests that request your review. Use a <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer">classic token</a> with the <code>repo</code> scope. Fine-grained tokens cannot read checks on private repositories.</p>
         </div>
 
         <div class="field">
@@ -191,14 +192,14 @@
         </div>
 
         <div class="field">
-          <label for="passphrase">Passphrase</label>
+          <label for="passphrase">Passphrase <span class="optional">only for your own server</span></label>
           <input id="passphrase" type="password" spellcheck="false" autocomplete="off" aria-describedby="passphraseHint" />
-          <p class="hint" id="passphraseHint">The same value as ASK_PASSPHRASE on the server.</p>
+          <p class="hint" id="passphraseHint">Leave empty for the shared server. For a copy you deployed yourself, the same value as ASK_PASSPHRASE there.</p>
         </div>
 
         <label class="check" for="showOnEveryPr">
           <input id="showOnEveryPr" type="checkbox" />
-          <span>Show the ball on every pull request (demo)</span>
+          <span>Show the ball on every pull request, not only ones that request my review</span>
         </label>
 
         <div class="actions">

@@ -16,10 +16,11 @@ import {
   fetchPull,
   fetchRawPr,
   githubFailureReason,
+  needsToken,
   searchReviewRequests,
 } from './github.js';
 import { STORAGE_KEYS, isWorkerRequest, type AskReply, type PrRef, type PrStatusReply } from './messages.js';
-import { isConfigured, loadSettings } from './settings.js';
+import { hasToken, isConfigured, loadSettings } from './settings.js';
 
 const POLL_ALARM = 'poll';
 const POLL_MINUTES = 2;
@@ -73,7 +74,8 @@ function poll(): Promise<void> {
 
 async function pollOnce(): Promise<void> {
   const settings = await loadSettings();
-  if (!isConfigured(settings)) return;
+  // Review requests are looked up for someone. Without a token there is nobody to look them up for.
+  if (!isConfigured(settings) || !hasToken(settings)) return;
 
   const requests = (await searchReviewRequests(settings.githubToken)).filter(
     (request) => request.id > 0 && PULL_URL.test(request.htmlUrl),
@@ -146,7 +148,8 @@ async function prStatus(ref: PrRef): Promise<PrStatusReply> {
   const settings = await loadSettings();
   // Not configured still shows the ball, so it can say "open the options page first".
   if (!isConfigured(settings)) return { configured: false, show: true };
-  if (settings.showOnEveryPr) return { configured: true, show: true };
+  // Without a token there is no telling whose review is requested, so the ball is on every pull request.
+  if (settings.showOnEveryPr || !hasToken(settings)) return { configured: true, show: true };
   try {
     const [pull, login] = await Promise.all([fetchPull(ref, settings.githubToken), loginFor(settings.githubToken)]);
     const me = login.toLowerCase();
@@ -164,7 +167,10 @@ async function ask(ref: PrRef): Promise<AskReply> {
   try {
     signals = buildPrSignals(await fetchRawPr(ref, settings.githubToken));
   } catch (error) {
-    return { ok: false, reason: githubFailureReason(error) };
+    const tokenSet = hasToken(settings);
+    const reason = githubFailureReason(error, tokenSet);
+    // When a token is the fix, the reason line links to where one goes.
+    return needsToken(error, tokenSet) ? { ok: false, reason, openOptions: true } : { ok: false, reason };
   }
   // Only the nine signals go to the server. The token stays here.
   return askServer(settings, signals);

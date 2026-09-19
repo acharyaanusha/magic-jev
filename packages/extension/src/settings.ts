@@ -15,7 +15,8 @@ export async function loadSettings(): Promise<Settings> {
   const saved = value as Record<string, unknown>;
   return {
     githubToken: asString(saved.githubToken),
-    serverUrl: asString(saved.serverUrl),
+    // An emptied field means "the hosted server", not "no server".
+    serverUrl: asString(saved.serverUrl) || DEFAULT_SETTINGS.serverUrl,
     passphrase: asString(saved.passphrase),
     showOnEveryPr: saved.showOnEveryPr === true,
   };
@@ -25,7 +26,15 @@ export async function saveSettings(settings: Settings): Promise<void> {
   await chrome.storage.local.set({ [STORAGE_KEYS.settings]: settings });
 }
 
-/** True when the token, the server URL and the passphrase are all set. */
+/**
+ * True when the ball can ask. Only the server is needed, and it has a default,
+ * so this is true on a fresh install. The token and the passphrase are optional.
+ */
 export function isConfigured(settings: Settings): boolean {
-  return settings.githubToken !== '' && settings.serverUrl !== '' && settings.passphrase !== '';
+  return settings.serverUrl !== '';
+}
+
+/** Review requests can only be looked up for someone, so polling and "is this mine?" need the token. */
+export function hasToken(settings: Settings): boolean {
+  return settings.githubToken !== '';
 }

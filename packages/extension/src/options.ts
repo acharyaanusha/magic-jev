@@ -5,7 +5,7 @@
  */
 import type { PrSignals } from '../../core/src/index.js';
 import { askServer, fetchLogin, githubFailureReason } from './github.js';
-import type { Settings } from './messages.js';
+import { HOSTED_SERVER_URL, type Settings } from './messages.js';
 import { loadSettings, saveSettings } from './settings.js';
 import { serverUrlSuggestion, tokenNote } from './setup-hints.js';
 
@@ -74,7 +74,9 @@ function readForm(): { settings: Settings } | { problem: string } {
   const passphrase = passphraseInput.value.trim();
   if (!PRINTABLE_ASCII.test(githubToken)) return { problem: 'GitHub token has characters a token cannot contain.' };
   if (!PRINTABLE_ASCII.test(passphrase)) return { problem: 'Passphrase must be plain ASCII letters, digits and symbols.' };
-  return { settings: { githubToken, serverUrl: server.origin, passphrase, showOnEveryPr: everyPrInput.checked } };
+  // An emptied server field goes back to the shared server.
+  const serverUrl = server.origin === '' ? HOSTED_SERVER_URL : server.origin;
+  return { settings: { githubToken, serverUrl, passphrase, showOnEveryPr: everyPrInput.checked } };
 }
 
 function fillForm(settings: Settings): void {
@@ -114,20 +116,11 @@ async function save(): Promise<void> {
     setStatus(`Saved, but ${notAllowed(settings.serverUrl)}`, 'bad');
     return;
   }
-  const missing = [
-    settings.githubToken === '' ? 'the GitHub token' : '',
-    settings.serverUrl === '' ? 'the server URL' : '',
-    settings.passphrase === '' ? 'the passphrase' : '',
-  ].filter((name) => name !== '');
-  if (missing.length > 0) {
-    setStatus(`Saved. Still missing: ${missing.join(', ')}.`);
-    return;
-  }
-  setStatus('Saved.', 'good');
+  setStatus(settings.githubToken === '' ? 'Saved. No token: public pull requests only.' : 'Saved.', 'good');
 }
 
 async function testGitHub(settings: Settings): Promise<{ ok: boolean; line: string }> {
-  if (settings.githubToken === '') return { ok: false, line: 'GitHub: no token yet' };
+  if (settings.githubToken === '') return { ok: true, line: 'GitHub: no token, so public pull requests only' };
   try {
     const login = await fetchLogin(settings.githubToken);
     const note = tokenNote(settings.githubToken);
@@ -138,9 +131,7 @@ async function testGitHub(settings: Settings): Promise<{ ok: boolean; line: stri
 }
 
 async function testServer(settings: Settings): Promise<{ ok: boolean; line: string }> {
-  if (settings.serverUrl === '' || settings.passphrase === '') {
-    return { ok: false, line: 'Server: no URL or passphrase yet' };
-  }
+  if (settings.serverUrl === '') return { ok: false, line: 'Server: no URL yet' };
   // Without this the fetch below is blocked and all the user sees is "could not reach the server".
   if (!(await canReach(settings.serverUrl))) return { ok: false, line: `Server: ${notAllowed(settings.serverUrl)}` };
   const reply = await askServer(settings, TEST_SIGNALS);

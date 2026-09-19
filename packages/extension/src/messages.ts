@@ -12,17 +12,22 @@ export interface PrRef {
 }
 
 export interface Settings {
+  /** Optional. Without one, public pull requests still work, up to GitHub's hourly limit for anonymous requests. */
   githubToken: string;
   /** Origin of the deployed server, e.g. https://magic-jev.vercel.app (no trailing slash). */
   serverUrl: string;
+  /** Only for a self-hosted server. The hosted one takes none. */
   passphrase: string;
   /** Demo switch: draw the ball on every pull request, not only ones awaiting my review. */
   showOnEveryPr: boolean;
 }
 
+/** The shared server. It runs open, behind a rate limit, so a fresh install needs no setup. */
+export const HOSTED_SERVER_URL = 'https://magic-jev.vercel.app';
+
 export const DEFAULT_SETTINGS: Settings = {
   githubToken: '',
-  serverUrl: '',
+  serverUrl: HOSTED_SERVER_URL,
   passphrase: '',
   showOnEveryPr: false,
 };
